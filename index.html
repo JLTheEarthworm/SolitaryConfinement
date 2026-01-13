@@ -5,203 +5,232 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>DBD Jack Wheel (Hidden Role)</title>
   <style>
-    body { font-family: system-ui, Arial, sans-serif; margin: 24px; max-width: 900px; }
+    body {
+      font-family: system-ui, Arial, sans-serif;
+      margin: 24px;
+      max-width: 900px;
+    }
     h1 { margin-bottom: 8px; }
-    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-    textarea { width: 100%; min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    button { padding: 10px 14px; cursor: pointer; }
-    .card { border: 1px solid #ddd; border-radius: 10px; padding: 14px; margin-top: 14px; }
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    textarea {
+      width: 100%;
+      min-height: 160px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    button {
+      padding: 10px 14px;
+      cursor: pointer;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 14px;
+      margin-top: 14px;
+    }
     .muted { color: #666; }
-    .big { font-size: 22px; font-weight: 700; }
+    .big {
+      font-size: 22px;
+      font-weight: 700;
+    }
     ul { margin: 8px 0 0; }
-    .danger { color: #b00020; font-weight: 700; }
-    .ok { color: #0b7a0b; font-weight: 700; }
-    .pill { display:inline-block; padding: 4px 10px; border:1px solid #ddd; border-radius: 999px; font-size: 12px; }
+    .danger {
+      color: #b00020;
+      font-weight: 700;
+    }
+    .ok {
+      color: #0b7a0b;
+      font-weight: 700;
+    }
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border: 1px solid #ddd;
+      border-radius: 999px;
+      font-size: 12px;
+    }
   </style>
 </head>
 <body>
-  <h1>DBD Jack Wheel (Hidden Role)</h1>
-  <p class="muted">
-    Paste survivor names (one per line). Click <b>Start Game</b> to secretly pick the Jack.
-    You can <b>Spin</b> to select a survivor, then choose to <b>Execute</b> or <b>Spare</b>.
-    The Jack is hidden until executed.
-  </p>
 
-  <div class="card">
-    <h2>1) Setup</h2>
-    <textarea id="namesInput" placeholder="Enter 20 survivor names, one per line..."></textarea>
-    <div class="row" style="margin-top:10px;">
-      <button id="startBtn">Start Game</button>
-      <button id="resetBtn">Reset</button>
-      <span id="status" class="pill">Not started</span>
-    </div>
-    <p class="muted" id="counts"></p>
+<h1>DBD Jack Wheel (Hidden Role)</h1>
+<p class="muted">
+  Paste survivor names (one per line). Start the game to secretly assign the Jack.
+  Execute survivors to check for the Jack.  
+  <b>If only 2 survivors remain, the Jack wins automatically.</b>
+</p>
+
+<div class="card">
+  <h2>1) Setup</h2>
+  <textarea id="namesInput" placeholder="Enter survivor names, one per line..."></textarea>
+  <div class="row" style="margin-top:10px;">
+    <button id="startBtn">Start Game</button>
+    <button id="resetBtn">Reset</button>
+    <span id="status" class="pill">Not started</span>
   </div>
+  <p class="muted" id="counts"></p>
+</div>
 
-  <div class="card">
-    <h2>2) Round</h2>
-    <div class="row">
-      <button id="spinBtn" disabled>Spin</button>
-      <button id="executeBtn" disabled>Execute</button>
-      <button id="spareBtn" disabled>Spare</button>
-    </div>
-    <p class="muted">Selected survivor:</p>
-    <div id="selected" class="big">—</div>
-    <p id="resultMsg"></p>
+<div class="card">
+  <h2>2) Round</h2>
+  <div class="row">
+    <button id="spinBtn" disabled>Spin</button>
+    <button id="executeBtn" disabled>Execute</button>
+    <button id="spareBtn" disabled>Spare</button>
   </div>
+  <p class="muted">Selected survivor:</p>
+  <div id="selected" class="big">—</div>
+  <p id="resultMsg"></p>
+</div>
 
-  <div class="card">
-    <h2>3) Remaining Survivors</h2>
-    <ul id="remainingList"></ul>
-  </div>
+<div class="card">
+  <h2>3) Remaining Survivors</h2>
+  <ul id="remainingList"></ul>
+</div>
 
-  <script>
-    // --- State ---
-    let survivors = [];        // remaining survivors
-    let jackIndex = null;      // index in ORIGINAL list (for secrecy & stability)
-    let jackName = null;       // actual jack name (kept hidden)
-    let selectedName = null;   // current selection
-    let gameOver = false;
+<script>
+  // ===== GAME STATE =====
+  let survivors = [];
+  let jackName = null;
+  let selectedName = null;
+  let gameOver = false;
 
-    const el = (id) => document.getElementById(id);
+  const el = (id) => document.getElementById(id);
 
-    function shufflePick(arr) {
-      // secure-ish random pick
-      const n = arr.length;
-      const r = Math.floor(Math.random() * n);
-      return arr[r];
-    }
+  function pickRandom(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
 
-    function renderRemaining() {
-      const ul = el("remainingList");
-      ul.innerHTML = "";
-      survivors.forEach((name) => {
-        const li = document.createElement("li");
-        li.textContent = name;
-        ul.appendChild(li);
-      });
-      el("counts").textContent = `Remaining: ${survivors.length}`;
-    }
-
-    function setStatus(text) {
-      el("status").textContent = text;
-    }
-
-    function setButtons({ spin, execute, spare }) {
-      el("spinBtn").disabled = !spin;
-      el("executeBtn").disabled = !execute;
-      el("spareBtn").disabled = !spare;
-    }
-
-    function clearRoundUI() {
-      selectedName = null;
-      el("selected").textContent = "—";
-      el("resultMsg").textContent = "";
-    }
-
-    // --- Actions ---
-    el("startBtn").addEventListener("click", () => {
-      const lines = el("namesInput").value
-        .split("\n")
-        .map(s => s.trim())
-        .filter(Boolean);
-
-      // basic validation
-      if (lines.length < 2) {
-        alert("Add at least 2 names (ideally 20).");
-        return;
-      }
-
-      survivors = [...lines];
-      // Secretly pick the Jack ONCE at start
-      jackIndex = Math.floor(Math.random() * survivors.length);
-      jackName = survivors[jackIndex];
-
-      gameOver = false;
-      clearRoundUI();
-      renderRemaining();
-
-      setStatus("Game running (Jack hidden)");
-      setButtons({ spin: true, execute: false, spare: false });
-
-      // IMPORTANT: do NOT show jackName anywhere.
-      // For debugging you could console.log it, but leave it commented:
-      // console.log("Jack is:", jackName);
+  function renderRemaining() {
+    const ul = el("remainingList");
+    ul.innerHTML = "";
+    survivors.forEach(name => {
+      const li = document.createElement("li");
+      li.textContent = name;
+      ul.appendChild(li);
     });
+    el("counts").textContent = `Remaining: ${survivors.length}`;
+  }
 
-    el("resetBtn").addEventListener("click", () => {
-      survivors = [];
-      jackIndex = null;
-      jackName = null;
-      selectedName = null;
-      gameOver = false;
+  function setButtons({ spin, execute, spare }) {
+    el("spinBtn").disabled = !spin;
+    el("executeBtn").disabled = !execute;
+    el("spareBtn").disabled = !spare;
+  }
 
-      el("namesInput").value = "";
-      clearRoundUI();
-      renderRemaining();
+  function setStatus(text) {
+    el("status").textContent = text;
+  }
 
-      setStatus("Not started");
+  function clearRound() {
+    selectedName = null;
+    el("selected").textContent = "—";
+  }
+
+  // ===== SETUP =====
+  el("startBtn").addEventListener("click", () => {
+    const names = el("namesInput").value
+      .split("\n")
+      .map(n => n.trim())
+      .filter(Boolean);
+
+    if (names.length < 3) {
+      alert("You need at least 3 survivors to start.");
+      return;
+    }
+
+    survivors = [...names];
+    jackName = pickRandom(survivors); // SECRET
+    gameOver = false;
+
+    clearRound();
+    renderRemaining();
+    setStatus("Game running (Jack hidden)");
+    setButtons({ spin: true, execute: false, spare: false });
+
+    // DEBUG ONLY (leave commented)
+    // console.log("Jack is:", jackName);
+  });
+
+  el("resetBtn").addEventListener("click", () => {
+    survivors = [];
+    jackName = null;
+    selectedName = null;
+    gameOver = false;
+
+    el("namesInput").value = "";
+    el("remainingList").innerHTML = "";
+    el("counts").textContent = "";
+    el("resultMsg").textContent = "";
+    el("selected").textContent = "—";
+
+    setStatus("Not started");
+    setButtons({ spin: false, execute: false, spare: false });
+  });
+
+  // ===== GAMEPLAY =====
+  el("spinBtn").addEventListener("click", () => {
+    if (gameOver || survivors.length === 0) return;
+
+    selectedName = pickRandom(survivors);
+    el("selected").textContent = selectedName;
+    el("resultMsg").textContent = "";
+    setButtons({ spin: true, execute: true, spare: true });
+  });
+
+  el("spareBtn").addEventListener("click", () => {
+    if (gameOver || !selectedName) return;
+
+    el("resultMsg").innerHTML = `<span class="ok">Spared.</span> Nothing happens.`;
+    clearRound();
+    setButtons({ spin: true, execute: false, spare: false });
+  });
+
+  el("executeBtn").addEventListener("click", () => {
+    if (gameOver || !selectedName) return;
+
+    // JACK EXECUTED
+    if (selectedName === jackName) {
+      gameOver = true;
+      setStatus("Game over");
+      el("resultMsg").innerHTML =
+        `<span class="danger">JACK FOUND!</span><br>
+         ${selectedName} was the Jack of Hearts.<br><br>
+         <b>Survivors win.</b>`;
       setButtons({ spin: false, execute: false, spare: false });
-    });
+      return;
+    }
 
-    el("spinBtn").addEventListener("click", () => {
-      if (gameOver) return;
-      if (survivors.length === 0) return;
+    // NOT JACK → REMOVE
+    survivors = survivors.filter(n => n !== selectedName);
+    renderRemaining();
 
-      selectedName = shufflePick(survivors);
-      el("selected").textContent = selectedName;
-      el("resultMsg").textContent = "";
-      setButtons({ spin: true, execute: true, spare: true });
-    });
+    // ✅ NEW RULE: 2 SURVIVORS LEFT → JACK WINS
+    if (survivors.length === 2) {
+      gameOver = true;
+      setStatus("Game over");
+      el("resultMsg").innerHTML =
+        `<span class="danger">Executed.</span> ${selectedName} was NOT the Jack.<br><br>
+         <span class="danger">JACK WINS!</span><br>
+         Only 2 survivors remain.<br>
+         (Jack was <b>${jackName}</b>)`;
+      setButtons({ spin: false, execute: false, spare: false });
+      return;
+    }
 
-    el("spareBtn").addEventListener("click", () => {
-      if (gameOver) return;
-      if (!selectedName) return;
+    // CONTINUE GAME
+    el("resultMsg").innerHTML =
+      `<span class="danger">Executed.</span> ${selectedName} was NOT the Jack.`;
 
-      el("resultMsg").innerHTML = `<span class="ok">Spared.</span> Nothing happens.`;
-      // keep them in the list
-      setButtons({ spin: true, execute: false, spare: false });
-      selectedName = null;
-      el("selected").textContent = "—";
-    });
+    clearRound();
+    setButtons({ spin: true, execute: false, spare: false });
+  });
+</script>
 
-    el("executeBtn").addEventListener("click", () => {
-      if (gameOver) return;
-      if (!selectedName) return;
-
-      if (selectedName === jackName) {
-        // JACK EXECUTED → GAME ENDS
-        gameOver = true;
-        el("resultMsg").innerHTML =
-          `<span class="danger">JACK FOUND!</span> ${selectedName} was the Jack of Hearts. Game over.`;
-        setStatus("Game over");
-        setButtons({ spin: false, execute: false, spare: false });
-      } else {
-        // NOT JACK → REMOVE FROM SURVIVORS
-        survivors = survivors.filter(n => n !== selectedName);
-
-        // If jack was removed accidentally by duplicate name, we guard against it:
-        if (!survivors.includes(jackName)) {
-          // This can happen if there are duplicate names equal to jackName.
-          // Best practice: use unique names.
-          // We'll end safely rather than desync.
-          gameOver = true;
-          el("resultMsg").innerHTML =
-            `<span class="danger">Error:</span> Jack name missing from pool (duplicate names?). Use unique names and restart.`;
-          setStatus("Game over (error)");
-          setButtons({ spin: false, execute: false, spare: false });
-          return;
-        }
-
-        renderRemaining();
-        el("resultMsg").innerHTML =
-          `<span class="danger">Executed.</span> ${selectedName} was NOT the Jack. They are eliminated.`;
-
-        // If only Jack remains, you can keep playing until you execute them.
-        clearRoundUI();
-        setButtons({ spin: true, execute: false, spare: false });
-      }
-    });
-  </script>
 </body>
 </html>
+
